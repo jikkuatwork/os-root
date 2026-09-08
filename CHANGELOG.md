@@ -7,6 +7,7 @@ in `koder/STATE.md`, live Git state, and current validation.
 ## 2026-09-08 — Persistent-VM bootstrap
 
 - Added a fail-closed restore script for the split clone-plus-ZIP migration into `~/Projects/Onesource/`, including committed archive checksum verification, site dependency installation, and optional fresh local Supabase initialization.
+- Hardened private-payload handling by rejecting broadly readable transfer archives and restricting restored files and directories to owner-only access before dependency installation.
 - Taught root session opening to detect a fresh clone and surface the explicit bootstrap command without weakening `/open`'s read-only contract.
 
 ## 2026-09-08 — OneSource workspace control plane

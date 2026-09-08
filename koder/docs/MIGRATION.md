@@ -14,7 +14,7 @@ Only `~/Projects/` is persistent on the destination VM. Do not restore the works
 ## Important boundaries
 
 - `/open` is observational. It reports missing repositories and the bootstrap command but never extracts files or installs packages itself.
-- `koder/bin/bootstrap-vm` performs the one-time extraction and installs `../code/site` dependencies from `pnpm-lock.yaml`.
+- `koder/bin/bootstrap-vm` performs the one-time extraction and installs `../code/site` dependencies from `pnpm-lock.yaml`. It rejects an archive accessible to group or other users, then strips group/other permissions from the restored payload before installing dependencies.
 - The archive contains private company/grant material and may contain ignored `.env.local`, `.env.production`, and `.env.staging` files. It is a sensitive transfer artifact: keep mode `0600`, transfer it directly, and delete or securely archive it after validation.
 - Docker images, containers, and volumes live outside the source workspace and are not in the ZIP. A fresh local Supabase stack must be created on the VM.
 - The source machine is `x86_64` and an M4-native guest is ARM64. Reinstalling dependencies is mandatory; copied native Node artifacts would not be trustworthy.
@@ -76,7 +76,7 @@ cd ~/Projects/Onesource/root
 
 ## Acceptance checks
 
-The bootstrap script verifies the committed SHA-256, ZIP CRCs, safe path layout, destination collisions, and the full repository registry. Before deleting the source machine, also verify:
+The bootstrap script verifies owner-only archive permissions, the committed SHA-256, ZIP CRCs, safe path layout, destination collisions, and the full repository registry. It also normalizes restored payload permissions to owner-only access. Before deleting the source machine, also verify:
 
 ```bash
 cd ~/Projects/Onesource/root

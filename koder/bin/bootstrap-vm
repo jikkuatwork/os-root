@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The payload can contain private company data and environment files. Keep all
+# files created by this process private unless the archive is normalized below.
+umask 077
+
 usage() {
   cat <<'EOF'
 Usage: koder/bin/bootstrap-vm [--check] [--with-supabase] [ARCHIVE]
@@ -20,7 +24,9 @@ Options:
   -h, --help       Show this help.
 
 The destination must contain the cloned root repository but none of the sibling
-payload directories. The transfer archive intentionally excludes root/.
+payload directories. The transfer archive intentionally excludes root/. The
+archive must not be accessible to group or other users; restored payload files
+and directories are restricted to the current user before dependency install.
 EOF
 }
 
@@ -59,7 +65,7 @@ EOF
   exit 1
 fi
 
-for command_name in unzip git node pnpm; do
+for command_name in unzip git node pnpm find chmod stat; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     printf 'ERROR required command is missing: %s\n' "$command_name" >&2
     exit 1
@@ -84,6 +90,15 @@ if [[ ! -f "$archive" ]]; then
   exit 1
 fi
 archive=$(cd -- "$(dirname -- "$archive")" && printf '%s/%s\n' "$(pwd -P)" "$(basename -- "$archive")")
+archive_mode=$(stat -c '%a' -- "$archive")
+if (( (8#$archive_mode & 077) != 0 )); then
+  cat >&2 <<EOF
+ERROR archive permissions are too broad: $archive (mode $archive_mode)
+The archive may contain private files. Restrict it first:
+  chmod 600 '$archive'
+EOF
+  exit 1
+fi
 
 checksum_file="$control_root/koder/workspace/TRANSFER.sha256"
 if [[ -f "$checksum_file" ]]; then
@@ -158,6 +173,12 @@ fi
 
 printf 'Extracting trusted OneSource payload...\n'
 unzip -q "$archive" -d "$workspace_root"
+
+printf 'Restricting restored payload permissions to the current user...\n'
+while IFS= read -r top; do
+  [[ -n "$top" ]] || continue
+  find "$workspace_root/$top" \( -type f -o -type d \) -exec chmod go-rwx -- {} +
+done < "$tops"
 
 printf 'Installing primary site dependencies from the lockfile...\n'
 (
