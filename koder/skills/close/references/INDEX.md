@@ -46,9 +46,20 @@ prints anything.
    ```
 8. Render `FORMAT.md` only after the final status check. Use `Git clean` only when both the index and working tree are empty. Report upstream ahead/behind separately; do not push or rewrite history unless the repository instructions or the user explicitly require it.
 
+## Workspace-root extension
+
+A root session may change multiple independent Git repositories. Before declaring close complete:
+
+1. Run `koder/bin/workspace-status --all` and compare it with the open-time baseline. Inventory drift is blocking. Pre-existing dirty repositories that were not touched are not close failures, but list them as preserved context.
+2. Enumerate every repository touched in the session. For each one, load its local instructions and inspect its full staged, unstaged, and untracked delta with `git -C <path> ...` before committing.
+3. Run each touched repository's own relevant tests, validators, scratch-retention gate, and close/handoff policy. A target repository's production and commit rules remain authoritative.
+4. Commit changes inside the repository that owns them. Never stage sibling files in `root`, combine independent Git histories, or claim a root commit contains child changes.
+5. Record the touched repository paths, resulting commit hashes, validation, and unresolved remote drift in the root `koder/STATE.md` close handoff. Keep target-specific detail in target artifacts and link to it.
+6. Root close succeeds only when `root` and every repository intentionally touched this session are clean. Unrelated pre-existing dirt elsewhere must remain untouched and be reported separately.
+
 ## Completion invariant
 
-- **Clean close:** the scratch retention gate reports `clean`; no output from `git status --porcelain=v1 --untracked-files=all`; all intended work and any `koder/SCRATCH_RETAIN.jsonl` change are in commits; `koder/STATE.md` is current and under 100 lines; validation results are reported.
+- **Clean close:** the root scratch retention gate reports `clean`; no output from root or any touched repository's `git status --porcelain=v1 --untracked-files=all`; all intended work and any `koder/SCRATCH_RETAIN.jsonl` change are in their owning repositories' commits; `koder/STATE.md` is current and under 100 lines; validation results are reported.
 - **Blocked close:** if the scratch gate is skipped or non-clean, or any path is unknown, unsafe, incomplete, unreviewed, or cannot be committed safely, do not pretend the session closed. Render `Session Close Blocked`, list exact paths and the reason, and name the next action.
 - A pre-existing dirty tree is not an excuse to skip the scratch gate or final check. Either resolve retained scratch and review and commit the intentional paths, or leave the close explicitly blocked.
 

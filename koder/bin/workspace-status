@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: koder/bin/workspace-status [--focus|--all]
+
+  --focus  Show the control root and focus repositories (default).
+  --all    Show every registered repository.
+
+The registry is always checked in full. Dirty repositories are informational;
+missing, invalid, or unregistered repositories make the command fail.
+EOF
+}
+
+mode=focus
+case "${1:-}" in
+  ""|--focus) mode=focus ;;
+  --all) mode=all ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+control_root=$(cd -- "$script_dir/../.." && pwd -P)
+workspace_root=$(cd -- "$control_root/.." && pwd -P)
+manifest="$control_root/koder/workspace/repos.tsv"
+
+if [[ ! -f "$manifest" ]]; then
+  printf 'ERROR registry missing: %s\n' "$manifest" >&2
+  exit 1
+fi
+
+registered_paths=$(mktemp)
+discovered_paths=$(mktemp)
+trap 'rm -f "$registered_paths" "$discovered_paths"' EXIT
+
+registered=0
+present=0
+dirty=0
+missing=0
+invalid=0
+shown=0
+inventory_ok=1
+
+inspect_repo() {
+  local id=$1 rel=$2 tier=$3 show=$4 count_sibling=$5
+  local candidate resolved branch changes upstream behind ahead counts
+
+  candidate="$control_root/$rel"
+  if [[ ! -d "$candidate" ]]; then
+    printf '%s [%s] ERROR=missing path=%s\n' "$id" "$tier" "$rel"
+    if [[ "$count_sibling" == 1 ]]; then
+      missing=$((missing + 1))
+      inventory_ok=0
+    fi
+    return
+  fi
+
+  resolved=$(cd -- "$candidate" && pwd -P)
+  case "$resolved/" in
+    "$workspace_root/"*) ;;
+    *)
+      printf '%s [%s] ERROR=outside-workspace path=%s resolved=%s\n' "$id" "$tier" "$rel" "$resolved"
+      if [[ "$count_sibling" == 1 ]]; then
+        invalid=$((invalid + 1))
+        inventory_ok=0
+      fi
+      return
+      ;;
+  esac
+
+  if ! git -C "$resolved" rev-parse --show-toplevel >/dev/null 2>&1; then
+    printf '%s [%s] ERROR=not-a-git-repository path=%s\n' "$id" "$tier" "$rel"
+    if [[ "$count_sibling" == 1 ]]; then
+      invalid=$((invalid + 1))
+      inventory_ok=0
+    fi
+    return
+  fi
+
+  if [[ "$(git -C "$resolved" rev-parse --show-toplevel)" != "$resolved" ]]; then
+    printf '%s [%s] ERROR=not-a-repository-root path=%s\n' "$id" "$tier" "$rel"
+    if [[ "$count_sibling" == 1 ]]; then
+      invalid=$((invalid + 1))
+      inventory_ok=0
+    fi
+    return
+  fi
+
+  if [[ "$count_sibling" == 1 ]]; then
+    printf '%s\n' "$resolved" >> "$registered_paths"
+    present=$((present + 1))
+  fi
+
+  branch=$(git -C "$resolved" branch --show-current 2>/dev/null || true)
+  [[ -n "$branch" ]] || branch='(detached-or-unborn)'
+  changes=$(git -C "$resolved" status --porcelain=v1 --untracked-files=all | awk 'END { print NR + 0 }')
+  if [[ "$count_sibling" == 1 && "$changes" -gt 0 ]]; then
+    dirty=$((dirty + 1))
+  fi
+
+  upstream=$(git -C "$resolved" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+  behind=-
+  ahead=-
+  if [[ -n "$upstream" ]]; then
+    counts=$(git -C "$resolved" rev-list --left-right --count "$upstream...HEAD" 2>/dev/null || true)
+    if [[ -n "$counts" ]]; then
+      read -r behind ahead <<<"$counts"
+    fi
+  else
+    upstream=none
+  fi
+
+  if [[ "$show" == 1 ]]; then
+    printf '%s [%s] branch=%s changes=%s upstream=%s behind=%s ahead=%s path=%s\n' \
+      "$id" "$tier" "$branch" "$changes" "$upstream" "$behind" "$ahead" "$rel"
+    shown=$((shown + 1))
+  fi
+}
+
+printf 'OneSource workspace: %s\n' "$workspace_root"
+inspect_repo root . control 1 0
+
+while IFS=$'\t' read -r id rel tier description || [[ -n "${id:-}" ]]; do
+  [[ -z "${id:-}" || "$id" == \#* ]] && continue
+  registered=$((registered + 1))
+  show=0
+  if [[ "$mode" == all || "$tier" == focus ]]; then
+    show=1
+  fi
+  inspect_repo "$id" "$rel" "$tier" "$show" 1
+done < "$manifest"
+
+sort -u -o "$registered_paths" "$registered_paths"
+find "$workspace_root" -xdev \
+  \( -type d \( -name node_modules -o -name .next -o -name .pnpm-store -o -name dist -o -name build \) -prune \) -o \
+  \( -name .git -print -prune \) |
+while IFS= read -r dotgit; do
+  repo=$(cd -- "$(dirname -- "$dotgit")" && pwd -P)
+  [[ "$repo" == "$control_root" ]] || printf '%s\n' "$repo"
+done | sort -u > "$discovered_paths"
+
+unregistered=0
+while IFS= read -r repo; do
+  [[ -n "$repo" ]] || continue
+  printf 'UNREGISTERED path=%s\n' "${repo#"$control_root/"}"
+  unregistered=$((unregistered + 1))
+  inventory_ok=0
+done < <(comm -23 "$discovered_paths" "$registered_paths")
+
+printf 'Summary: registered=%s present=%s dirty=%s missing=%s invalid=%s unregistered=%s shown=%s\n' \
+  "$registered" "$present" "$dirty" "$missing" "$invalid" "$unregistered" "$shown"
+
+if [[ "$inventory_ok" != 1 ]]; then
+  exit 1
+fi

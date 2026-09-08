@@ -1,0 +1,28 @@
+# id	path	tier	description
+site	../code/site	focus	Primary OneSource management platform
+lens-grant	../grants/lens	focus	Singapore LENS grant study and delivery workspace
+agreement	../agreement	support	Agreement workspace
+code-lens	../code/lens	support	LENS code workspace
+reports-v2	../code/reports-v2	support	Reports workspace
+shorms	../code/shorms	support	Shared forms library
+figma-frames	../figma-frames	support	Design frame workspace
+invoices	../invoices	support	Invoice workspace
+research	../research	support	Company research workspace
+slides	../slides	support	Presentation workspace
+work	../work	support	Work records and supporting outputs
+archive-blogs	../code/archives/blogs	archive	Archived code repository
+archive-categorisation	../code/archives/categorisation	archive	Archived code repository
+archive-landing-page	../code/archives/landing-page	archive	Archived code repository
+archive-lens-old	../code/archives/lens-old	archive	Archived code repository
+archive-os-slides-old	../code/archives/os-slides-old	archive	Archived code repository
+archive-report	../code/archives/report	archive	Archived code repository
+archive-reports-pipeline	../code/archives/reports-pipeline	archive	Archived code repository
+archive-site-v1	../code/archives/site-v1	archive	Archived code repository
+archive-slide-previewer	../code/archives/SlidePreviewer	archive	Archived code repository
+archive-team	../code/archives/team	archive	Archived code repository
+archive-vercel-old	../code/archives/vercel-old	archive	Archived code repository
+archive-old-lens-slides	../grants/archives/old-lens-slides	archive	Archived grant repository
+reference-dansk-bank	../work/_git-clones/dansk-bank	reference	External reference clone
+reference-orakion-skin	../work/_git-clones/orakion-skin	reference	External reference clone
+reference-orakion-wireframe	../work/_git-clones/orakion-wireframe	reference	External reference clone
+reference-pitcher	../work/_git-clones/pitcher	reference	External reference clone

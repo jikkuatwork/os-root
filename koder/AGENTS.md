@@ -9,6 +9,18 @@ This repo uses the koder pattern for durable agent handoff and project memory.
 - `README.md` is the root documentation exception because repository hosts render it directly; prefer other durable docs under `koder/docs/` unless project conventions require otherwise.
 - Do not put product source code under `koder/` unless the project explicitly says so.
 
+## OneSource workspace control plane
+
+- This repository is the only harness entrypoint for the `Onesource/` workspace. Do not open or dispatch a coding harness with a sibling repository as its session root.
+- The workspace root is this repository's parent. Use portable relative paths from `root/`; do not persist machine-specific `/home/<user>` paths in artifacts.
+- `koder/workspace/repos.tsv` is the canonical sibling-repository registry. Run `koder/bin/workspace-status` at session open and `koder/bin/workspace-status --all` before close or migration.
+- `../code/site` is the primary product repository. `../grants/lens` is the Singapore LENS grant workspace. Read their handoffs during root open; load other repositories only when the task reaches them.
+- Sibling repositories remain independent Git roots. Never try to stage their files in this repository, silently convert them to submodules, move them, merge histories, or duplicate their durable state here.
+- Before touching a sibling, read its `AGENTS.md` or `CLAUDE.md`, its `koder/STATE.md` when present, and its live Git status. Target instructions override this baseline for work inside that target.
+- Keep the harness rooted here and run target commands with `git -C ../path ...` or a bounded `(cd ../path && ...)` subshell. Tests and commits belong to the repository whose files changed.
+- Root issues and state are for organization-wide routing and cross-repository decisions. Target-specific issues, plans, reviews, changelogs, and handoffs stay in the target repository; link rather than copy them.
+- At close, inspect every repository touched during the session. Preserve pre-existing dirty work in unrelated repositories and report it without absorbing, resetting, or cleaning it.
+
 ## Session handoff
 
 - Use the `open` skill at the start of a session.

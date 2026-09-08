@@ -7,6 +7,8 @@ Session Opened: **<repository>**
 ━━━
 Branch        `<branch>`
 Git           `clean` or `dirty — <count> path(s)`
+Workspace     `<present>/<registered> sibling repos · <dirty> dirty · <drift> drift`
+Focus         `site <status> · lens-grant <status>`
 Sync          `✔` or `✘ <ahead/behind detail>`
 Last Session  `<timestamp>` (`<time ago>`)
 Commits       `<total>` total · `<since hand-off>` since hand-off
@@ -37,6 +39,7 @@ Stop Gate     `<hard boundary>`
 
 - Use `━━━` as the separator; do not use `---`.
 - Keep the stat block compact and aligned. Omit fields whose facts are unavailable rather than inventing values.
+- **Workspace** summarizes the full registry; **Focus** summarizes the two focus repositories without implying that pre-existing dirt elsewhere was repaired.
 - Use inline code for branches, commits, issue numbers, and file paths.
 - Omit **Notes** when the tree is clean, upstream is synchronized, and the hand-off has no warning.
 - **Past**, **Present**, and **Future** come primarily from `koder/STATE.md`. Bounded project history may clarify **Past** only; it never overrides the hand-off, live Git facts, authorization, or current validation.
