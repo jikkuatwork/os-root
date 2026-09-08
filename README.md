@@ -38,6 +38,16 @@ Each sibling remains an independent Git repository with its own history and rule
 - `koder/issues/` — cross-project issues only; target-specific issues stay in the target repository.
 - `CHANGELOG.md` — meaningful control-plane milestones.
 
-## Moving to another machine
+## Moving to the persistent VM
 
-See `koder/docs/MIGRATION.md`. The short version: preserve the whole `Onesource/` layout, remove regenerable `node_modules/` and `.next/` directories before transfer, move secrets securely, and recreate Docker/Supabase state on the destination.
+The transfer archive contains every sibling workspace entry but intentionally excludes `root/`. On the VM:
+
+```bash
+mkdir -p ~/Projects/Onesource
+git clone git@github.com:jikkuatwork/os-root.git ~/Projects/Onesource/root
+cd ~/Projects/Onesource/root
+./koder/bin/bootstrap-vm --check ~/scrap/os.zip
+./koder/bin/bootstrap-vm ~/scrap/os.zip
+```
+
+Then start the coding harness from `~/Projects/Onesource/root` and invoke `/open`. The bootstrap script—not `/open`—extracts the archive and installs the primary site's pnpm dependencies. See `koder/docs/MIGRATION.md` for Docker/Supabase setup and security details.

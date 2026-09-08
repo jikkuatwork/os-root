@@ -4,6 +4,11 @@ This is a concise, newest-first record of meaningful project changes. Keep
 umbrella milestones rather than mirroring every commit. Current readiness belongs
 in `koder/STATE.md`, live Git state, and current validation.
 
+## 2026-09-08 — Persistent-VM bootstrap
+
+- Added a fail-closed restore script for the split clone-plus-ZIP migration into `~/Projects/Onesource/`, including committed archive checksum verification, site dependency installation, and optional fresh local Supabase initialization.
+- Taught root session opening to detect a fresh clone and surface the explicit bootstrap command without weakening `/open`'s read-only contract.
+
 ## 2026-09-08 — OneSource workspace control plane
 
 - Registered every sibling Git repository under the single `root` harness entrypoint, with the product and LENS grant workspaces as bounded focus repositories.

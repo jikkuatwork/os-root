@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: koder/bin/bootstrap-vm [--check] [--with-supabase] [ARCHIVE]
+
+Restore the OneSource sibling workspace beside this cloned root repository and
+install the primary site's pnpm dependencies.
+
+Defaults:
+  ARCHIVE      ~/scrap/os.zip
+  destination  parent of this root clone (expected: ~/Projects/Onesource)
+
+Options:
+  --check          Validate archive, destination, and required tools; do not extract.
+  --with-supabase  After dependency install, start and reset the fresh local
+                   Supabase stack. This is local-only and destructive to that
+                   destination stack.
+  -h, --help       Show this help.
+
+The destination must contain the cloned root repository but none of the sibling
+payload directories. The transfer archive intentionally excludes root/.
+EOF
+}
+
+check_only=0
+with_supabase=0
+archive=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --check) check_only=1 ;;
+    --with-supabase) with_supabase=1 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) printf 'ERROR unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *)
+      if [[ -n "$archive" ]]; then
+        printf 'ERROR only one archive path is accepted\n' >&2
+        exit 2
+      fi
+      archive=$1
+      ;;
+  esac
+  shift
+done
+
+archive=${archive:-"$HOME/scrap/os.zip"}
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+control_root=$(cd -- "$script_dir/../.." && pwd -P)
+workspace_root=$(cd -- "$control_root/.." && pwd -P)
+expected_root="$HOME/Projects/Onesource"
+
+if [[ "$workspace_root" != "$expected_root" && "${ONESOURCE_ALLOW_OTHER_DESTINATION:-0}" != 1 ]]; then
+  cat >&2 <<EOF
+ERROR refusing non-persistent destination: $workspace_root
+Expected the root clone at: $expected_root/root
+Set ONESOURCE_ALLOW_OTHER_DESTINATION=1 only for an intentional alternate path.
+EOF
+  exit 1
+fi
+
+for command_name in unzip git node pnpm; do
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    printf 'ERROR required command is missing: %s\n' "$command_name" >&2
+    exit 1
+  fi
+done
+
+if [[ "$with_supabase" == 1 ]]; then
+  for command_name in docker supabase; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+      printf 'ERROR --with-supabase requires: %s\n' "$command_name" >&2
+      exit 1
+    fi
+  done
+  if ! docker info >/dev/null 2>&1; then
+    printf 'ERROR Docker daemon is unavailable to the current user\n' >&2
+    exit 1
+  fi
+fi
+
+if [[ ! -f "$archive" ]]; then
+  printf 'ERROR archive not found: %s\n' "$archive" >&2
+  exit 1
+fi
+archive=$(cd -- "$(dirname -- "$archive")" && printf '%s/%s\n' "$(pwd -P)" "$(basename -- "$archive")")
+
+checksum_file="$control_root/koder/workspace/TRANSFER.sha256"
+if [[ -f "$checksum_file" ]]; then
+  if ! command -v sha256sum >/dev/null 2>&1; then
+    printf 'ERROR sha256sum is required to verify the registered transfer archive\n' >&2
+    exit 1
+  fi
+  expected_checksum=$(awk '$2 == "os.zip" { print $1; exit }' "$checksum_file")
+  if [[ -z "$expected_checksum" ]]; then
+    printf 'ERROR registered checksum is malformed: %s\n' "$checksum_file" >&2
+    exit 1
+  fi
+  actual_checksum=$(sha256sum "$archive" | awk '{ print $1 }')
+  if [[ "$actual_checksum" != "$expected_checksum" ]]; then
+    printf 'ERROR archive checksum does not match %s\n' "$checksum_file" >&2
+    exit 1
+  fi
+  printf 'Checksum:    verified\n'
+fi
+
+entries=$(mktemp)
+tops=$(mktemp)
+trap 'rm -f "$entries" "$tops"' EXIT
+
+if ! unzip -tqq "$archive"; then
+  printf 'ERROR zip integrity check failed: %s\n' "$archive" >&2
+  exit 1
+fi
+unzip -Z1 "$archive" > "$entries"
+
+if grep -Eq '(^/|^[A-Za-z]:|(^|/)\.\.(/|$))' "$entries"; then
+  printf 'ERROR archive contains an unsafe absolute or parent path\n' >&2
+  exit 1
+fi
+if grep -Eq '^\.?/?root(/|$)' "$entries"; then
+  printf 'ERROR archive must not contain root/; clone root separately\n' >&2
+  exit 1
+fi
+if ! grep -qx 'code/site/package.json' "$entries"; then
+  printf 'ERROR archive is missing code/site/package.json\n' >&2
+  exit 1
+fi
+if ! grep -Eq '^grants/lens/' "$entries"; then
+  printf 'ERROR archive is missing grants/lens/\n' >&2
+  exit 1
+fi
+
+awk -F/ 'NF && $1 != "." { print $1 }' "$entries" | sort -u > "$tops"
+collision=0
+while IFS= read -r top; do
+  [[ -n "$top" ]] || continue
+  if [[ -e "$workspace_root/$top" || -L "$workspace_root/$top" ]]; then
+    printf 'ERROR destination path already exists: %s\n' "$workspace_root/$top" >&2
+    collision=1
+  fi
+done < "$tops"
+if [[ "$collision" == 1 ]]; then
+  printf 'Refusing to merge over a partial or existing workspace. Resolve it manually.\n' >&2
+  exit 1
+fi
+
+printf 'Archive:     %s\n' "$archive"
+printf 'Destination: %s\n' "$workspace_root"
+printf 'Node:        %s\n' "$(node --version)"
+printf 'pnpm:        %s\n' "$(pnpm --version)"
+printf 'Payload:     %s top-level entries\n' "$(wc -l < "$tops" | tr -d ' ')"
+
+if [[ "$check_only" == 1 ]]; then
+  printf 'Check complete; no files extracted.\n'
+  exit 0
+fi
+
+printf 'Extracting trusted OneSource payload...\n'
+unzip -q "$archive" -d "$workspace_root"
+
+printf 'Installing primary site dependencies from the lockfile...\n'
+(
+  cd -- "$workspace_root/code/site"
+  pnpm install --frozen-lockfile
+)
+
+if [[ "$with_supabase" == 1 ]]; then
+  printf 'Starting and resetting the fresh local Supabase stack...\n'
+  (
+    cd -- "$workspace_root/code/site"
+    supabase start
+    supabase db reset
+  )
+fi
+
+printf 'Validating the restored repository registry...\n'
+"$control_root/koder/bin/workspace-status" --all
+
+cat <<EOF
+
+Bootstrap complete.
+
+Next:
+  cd $control_root
+  # Start your coding harness here, then run /open.
+
+The archive may contain private ignored environment files. Keep it protected and
+do not commit those files. Docker/Supabase was $(if [[ "$with_supabase" == 1 ]]; then printf 'initialized'; else printf 'not started; use --with-supabase on the first run or set it up separately'; fi).
+EOF

@@ -14,7 +14,7 @@ Use this skill at the beginning of a work session in this repository. Opening is
    ```bash
    koder/bin/workspace-status
    ```
-   Report whole-registry counts and inventory drift. Do not repair missing, dirty, or unregistered repositories during `open`.
+   Report whole-registry counts and inventory drift. Do not repair missing, dirty, or unregistered repositories during `open`. On a fresh clone at `~/Projects/Onesource/root`, if sibling paths are missing and `~/scrap/os.zip` exists, surface `./koder/bin/bootstrap-vm --check ~/scrap/os.zip` followed by `./koder/bin/bootstrap-vm ~/scrap/os.zip` as the recommended next action. Run it only when the user's request explicitly authorizes bootstrap; `/open` itself remains observational.
 4. For each `focus` row in `koder/workspace/repos.tsv`, read its `koder/STATE.md` when present and inspect only its branch/status/upstream facts. Do not preload its changelog, source, issues, or full instructions; load those after the user selects work in that target.
 5. Locate this control repository's established project-history surface. Prefer root `CHANGELOG.md`; otherwise preserve and use an existing top-level or `docs/` changelog, changes, history, news, or release-notes file, or a release-notes directory such as `.changeset/`, `release-notes/`, or `releases/`. Do not invent a second history surface.
 6. When a history surface exists, read no more than 100 lines of its newest-first content—one entrypoint or newest release file, not the whole archive. Use it only as historical grounding; `koder/STATE.md`, live Git facts, and current validation take precedence. If repository instructions require history tracking and none exists, note that without creating it during `open`.

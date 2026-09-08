@@ -1,121 +1,101 @@
-# Moving the OneSource Workspace to an M4 Air VM
+# Restore OneSource on the Persistent M4 Air VM
 
-## Recommendation
+## Transfer contract
 
-Yes—the site can run in a VM on an M4 Air, including its local Supabase Docker stack, provided the guest is a native ARM64 Linux VM with Docker support and enough memory/disk. Rebuild dependencies and containers in the destination; do not copy machine-specific build products or Docker volumes.
+The migration uses two independent pieces:
 
-Prefer a `tar` archive over ZIP because this workspace uses relative symlinks and executable scripts. Preserve the complete `Onesource/` directory layout so `root/` remains a sibling of `code/`, `grants/`, and the other areas.
+1. `git@github.com:jikkuatwork/os-root.git` supplies the control repository at `~/Projects/Onesource/root`.
+2. `~/scrap/os.zip` supplies every sibling directory from the old `~/Onesource/` workspace.
 
-## What the initial audit found
+The ZIP intentionally excludes `root/` so it cannot overwrite the fresh clone. It includes sibling `.git` directories, ignored working files, and non-repository areas, but excludes regenerable `node_modules/` and `.next/` trees. The exact transfer artifact is pinned by `koder/workspace/TRANSFER.sha256`; bootstrap verifies it before extraction, so copying only `os.zip` is sufficient.
 
-On 2026-09-08:
+Only `~/Projects/` is persistent on the destination VM. Do not restore the workspace to `~/Onesource/`; the bootstrap script derives `~/Projects/Onesource/` from the location of the cloned root.
 
-- The source environment was Linux `x86_64`; an M4-native VM will normally be `arm64`/`aarch64`.
-- The workspace held 27 sibling Git repositories plus this control repository.
-- Regenerable `node_modules/` directories occupied about `4.0G`.
-- Regenerable `.next/` directories occupied about `3.6G`.
-- `../code/site/node_modules` was about `1.1G`; `../code/site/.next` was about `2.6G`.
-- The site used Node `24.8.0`, pnpm `10.33.0`, and Supabase CLI `2.90.0`.
-- Local Supabase ran 11 Docker containers. Docker's images, containers, and database volumes live outside `~/Onesource/` and will not be captured by an archive of this directory.
-- Site secrets existed in ignored `.env.local`, `.env.production`, and `.env.staging` files. Only `.env.example` was tracked.
+## Important boundaries
 
-Treat these as migration-time observations, not permanent version pins.
+- `/open` is observational. It reports missing repositories and the bootstrap command but never extracts files or installs packages itself.
+- `koder/bin/bootstrap-vm` performs the one-time extraction and installs `../code/site` dependencies from `pnpm-lock.yaml`.
+- The archive contains private company/grant material and may contain ignored `.env.local`, `.env.production`, and `.env.staging` files. It is a sensitive transfer artifact: keep mode `0600`, transfer it directly, and delete or securely archive it after validation.
+- Docker images, containers, and volumes live outside the source workspace and are not in the ZIP. A fresh local Supabase stack must be created on the VM.
+- The source machine is `x86_64` and an M4-native guest is ARM64. Reinstalling dependencies is mandatory; copied native Node artifacts would not be trustworthy.
 
-## Before creating the archive
+## Destination prerequisites
 
-1. Check every repository from the control root:
-   ```bash
-   cd ~/Onesource/root
-   ./koder/bin/workspace-status --all
-   ```
-   Commit/push intentional work where a remote exists. For repositories without remotes, the archive is the only copy of local Git history, so keep a second verified backup.
+Use a native ARM64 Linux VM. Install:
 
-2. Decide how secrets move. Do not place an unencrypted archive containing `.env*` files in email, public object storage, or an untrusted sync folder. Prefer recreating them from a password manager or transferring them in a separate encrypted package.
+- Git and GitHub SSH access;
+- `unzip`;
+- Node and pnpm (the source used Node `24.8.0` and pnpm `10.33.0` at transfer time);
+- Docker Engine and Supabase CLI if local Supabase should be initialized immediately.
 
-3. Decide whether local Supabase data is disposable:
-   - If migrations and seeds reproduce everything needed, no Docker-volume transfer is required. On the destination, run `supabase start` and then `supabase db reset` against the fresh local stack.
-   - If non-reproducible local data matters, export it separately and keep the dump private. For example:
-     ```bash
-     mkdir -p ~/onesource-private-migration
-     chmod 700 ~/onesource-private-migration
-     (cd ~/Onesource/code/site && \
-       supabase db dump --local --data-only \
-       --file ~/onesource-private-migration/site-local-data.sql)
-     chmod 600 ~/onesource-private-migration/site-local-data.sql
-     ```
-     Test the restore plan before deleting the source VM. Never commit this dump. Do not use `supabase stop --no-backup` unless local data is intentionally disposable.
+A practical starting allocation for Next.js plus Supabase is 4 vCPUs, 8–12 GiB RAM, and at least 40 GiB free disk.
 
-4. Stop development processes and the local Supabase stack cleanly after any export:
-   ```bash
-   (cd ~/Onesource/code/site && supabase stop)
-   ```
+## One-time restore
 
-5. Remove architecture-specific, regenerable directories. Preview first:
-   ```bash
-   find ~/Onesource -type d \( -name node_modules -o -name .next \) -prune -print
-   ```
-   After reviewing the list:
-   ```bash
-   find ~/Onesource -type d \( -name node_modules -o -name .next \) \
-     -prune -exec rm -rf -- {} +
-   ```
-   Removing these directories is recommended, especially for an `x86_64` to ARM64 move. Lockfiles remain and dependencies will be reinstalled.
-
-## Archive and verify
-
-Create the archive outside the directory being archived:
+Copy `os.zip` to `~/scrap/os.zip`, then:
 
 ```bash
-cd ~
-tar -czf "Onesource-$(date +%F).tar.gz" Onesource
-sha256sum "Onesource-$(date +%F).tar.gz" > "Onesource-$(date +%F).tar.gz.sha256"
-tar -tzf "Onesource-$(date +%F).tar.gz" >/dev/null
+mkdir -p ~/Projects/Onesource
+git clone git@github.com:jikkuatwork/os-root.git ~/Projects/Onesource/root
+cd ~/Projects/Onesource/root
+
+# Validate without changing the destination.
+./koder/bin/bootstrap-vm --check ~/scrap/os.zip
+
+# Extract every sibling repo/area and install site dependencies.
+./koder/bin/bootstrap-vm ~/scrap/os.zip
 ```
 
-`tar` preserves the root repository's relative skill symlinks and executable bits. Encrypt the archive if it includes ignored environment files, private grant material, invoices, or other confidential data. Keep the source machine untouched until the destination passes validation.
-
-If ZIP is mandatory, use an implementation/options that store symlinks as symlinks (Info-ZIP uses `-y`) and verify them after extraction. Do not assume a GUI ZIP tool preserves links or Unix modes.
-
-## Destination VM baseline
-
-Use a native ARM64 Linux guest rather than an emulated `x86_64` guest. A practical starting allocation for Next.js plus the local Supabase stack is 4 vCPUs, 8 GiB RAM, and at least 40 GiB free disk; 12 GiB RAM is more comfortable if the host has enough memory. Actual needs depend on which tests and builds run concurrently.
-
-Install and verify:
-
-- Git and SSH/GitHub authentication.
-- Node and pnpm matching the intended project toolchain.
-- Docker Engine plus the Compose plugin, with the current user allowed to access the daemon.
-- Supabase CLI; begin with the source version for a low-drift migration, then upgrade deliberately.
-- Any Vercel, Supabase, or other provider credentials through their normal login/secret setup—not by copying host credential stores blindly.
-
-Docker/Supabase images normally used by this project are expected to run on Apple Silicon through an ARM64-capable engine, but the real acceptance test is a clean `supabase start`. A pinned image without an ARM64 variant may need emulation or a version adjustment.
-
-## Restore and validate
+To initialize a fresh local Supabase stack in the same one-time operation, use this instead of the final command:
 
 ```bash
-cd ~
-tar -xzf Onesource-YYYY-MM-DD.tar.gz
-cd ~/Onesource/root
-./koder/bin/workspace-status --all
+./koder/bin/bootstrap-vm --with-supabase ~/scrap/os.zip
 ```
 
-Then restore site secrets securely and rebuild from lockfiles:
+That option runs `supabase start` and then `supabase db reset` against the new VM's **local** database. If Docker/Supabase is not ready during extraction, omit the option and later run:
 
 ```bash
-cd ~/Onesource/code/site
-pnpm install --frozen-lockfile
+cd ~/Projects/Onesource/code/site
 supabase start
-supabase db reset       # local stack only; destructive to that fresh local DB
+supabase db reset
+```
+
+Do not run `bootstrap-vm` over an existing or partially restored workspace. It fails closed on any payload-path collision rather than merging unknown files.
+
+## Open the restored workspace
+
+After bootstrap succeeds:
+
+```bash
+cd ~/Projects/Onesource/root
+# Start Pi/Codex/Claude here.
+# Then invoke /open inside the harness.
+```
+
+`/open` checks all 27 registered sibling repositories, reads the focus handoffs for `code/site` and `grants/lens`, and reports the next task. No harness should be opened from a sibling repository.
+
+## Acceptance checks
+
+The bootstrap script verifies the committed SHA-256, ZIP CRCs, safe path layout, destination collisions, and the full repository registry. Before deleting the source machine, also verify:
+
+```bash
+cd ~/Projects/Onesource/root
+./koder/bin/workspace-status --all
+
+git -C ../code/site status --short
+git -C ../grants/lens status --short
+
+cd ../code/site
 pnpm test
 pnpm typecheck
 pnpm build
 ```
 
-Finally run the site locally, check the key authenticated flows, and compare repository status with the source machine. Do not decommission the source until:
+Confirm that:
 
-- the registry reports no missing/unregistered repositories;
-- all required Git histories and ignored working files are present;
-- root skill symlinks resolve;
-- Docker/Supabase is healthy;
-- the site installs, tests, builds, and starts;
-- required secrets and provider logins work without exposing them in Git.
+- all 27 sibling Git roots are present;
+- the known pre-existing dirty repositories match the source handoff rather than new transfer damage;
+- site dependencies install on ARM64;
+- ignored environment files needed for local work are present and remain untracked;
+- Docker/Supabase starts successfully if required;
+- root skill symlinks resolve and `/open` runs from `~/Projects/Onesource/root`.

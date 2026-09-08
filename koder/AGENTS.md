@@ -20,6 +20,7 @@ This repo uses the koder pattern for durable agent handoff and project memory.
 - Keep the harness rooted here and run target commands with `git -C ../path ...` or a bounded `(cd ../path && ...)` subshell. Tests and commits belong to the repository whose files changed.
 - Root issues and state are for organization-wide routing and cross-repository decisions. Target-specific issues, plans, reviews, changelogs, and handoffs stay in the target repository; link rather than copy them.
 - At close, inspect every repository touched during the session. Preserve pre-existing dirty work in unrelated repositories and report it without absorbing, resetting, or cleaning it.
+- On a fresh VM clone under `~/Projects/Onesource/root`, missing sibling repositories are restored only through `koder/bin/bootstrap-vm ~/scrap/os.zip`. `/open` remains read-only: it may surface that command, but extraction and dependency installation require the user's explicit bootstrap request.
 
 ## Session handoff
 
