@@ -1,5 +1,5 @@
 ---
-updated_at: "09 Sep 2026 | 01:23 PM IST"
+updated_at: "09 Sep 2026 | 08:57 PM IST"
 ---
 
 # Koder State
@@ -7,28 +7,26 @@ updated_at: "09 Sep 2026 | 01:23 PM IST"
 ## Past
 
 - Initialized koder-pattern in `e437b61`, the 27-repository control plane in `ae14cfe`, and the persistent-VM bootstrap in `bbacb47`.
-- Restored the pinned `os.zip` payload on the ARM64 VM: all 27 sibling Git roots are present and `git fsck` passes for every repository.
-- Hardened transfer privacy in `69bf76a`: bootstrap now rejects broadly readable archives and restricts restored payload permissions to the owner.
-- Installed the site lockfile, then passed 81 Vitest files / 325 tests, typecheck, and a production build across 118 routes.
-- Started a fresh local Supabase stack, applied 99 migrations and all six configured seed files, and verified the local REST API and seeded PostgreSQL data.
-- Fixed VM-network login in site commits `15a49cb` and `32d2d90`; a real Chromium login now reaches the seeded fund dashboard without console or request errors.
-- Confirmed the transfer did not include the old local database or Storage volume and filed the portable source-export handoff at `koder/issues/001_restore_original_local_supabase/INDEX.md`.
+- Restored and validated all 27 sibling Git roots on the ARM64 VM, hardened transfer privacy in `69bf76a`, and passed the site's 325 tests, typecheck, and 118-route production build.
+- Initialized the VM's local Supabase schema and six seed files and verified a local authenticated browser workflow; that rebuilt database was not a copy of the source volume.
+- On the source machine, exported the local `../code/site` PostgreSQL database to owner-only `~/Desktop/os.sql` as a complete plain schema-and-data dump.
+- Verified the dump's PostgreSQL completion marker, 95 table definitions, 95 data blocks, `1,539,676`-byte size, and SHA-256 `daed4bb4b36f50289353ef9a0b12552e57ae4d491a6e06a6f96f7881f44c0cbb`.
 
 ## Present
 
-- `root` remains the only harness entrypoint. `root`, `../code/site`, and `../grants/lens` are clean; root and site handoffs are synchronized to their `origin` remotes.
-- The site is live through user unit `onesource-site-dev.service` at `http://localhost:3000`; the verified VM-network endpoint is discoverable from the Next.js service log.
-- Twelve local Supabase containers are healthy through rootless Podman. Studio is at `http://127.0.0.1:54323` and local mail is at `http://127.0.0.1:54324`.
-- The site's private `.env.local` targets the VM-reachable app and Supabase endpoints, and its local API keys match the running stack. No hosted database, cloud resource, deployment, or production data was touched.
-- Current database content is migration-and-seed output, not a 1:1 copy. Issue `001` is blocked on exporting the preserved old-machine local database and Storage objects.
+- State: IN_PROGRESS — source database export complete; private transfer and destination restore pending.
+- Source counts at export were 99 migrations, 25 auth users, 69 organizations, and 21 Storage metadata objects.
+- The owner will place the transferred dump at `~/scratch/os.sql` on the new machine before the next session. This session has not observed or verified that destination file.
+- `os.sql` contains private database schema and rows, including Auth and Storage metadata. It must remain outside Git and must not be printed into logs or chat.
+- Physical Supabase Storage object bytes are not part of `os.sql`; database recovery must not be described as complete Storage recovery.
+- Root and `../code/site` remain clean. The source local Supabase stack is running after the dump.
 - Seven preserved repositories retain their source-machine changes: `agreement`, `archive-blogs`, `archive-categorisation`, `archive-os-slides-old`, `archive-team`, `archive-vercel-old`, and `figma-frames`.
-- With app and database running, the 6-CPU / 15-GiB VM retained about 11 GiB available RAM. The Projects volume has about 50 GiB free; the root filesystem has about 12 GiB free after 9.6 GB of container images.
-- `~/scrap/os.zip` remains owner-only (`0600`). Supabase CLI `2.117.0` was run through pinned `pnpm dlx`; no global package was installed.
 
 ## Future
 
-- On the old machine, follow `koder/issues/001_restore_original_local_supabase/INDEX.md` to export portable SQL, a full fallback dump, Storage objects, versions, counts, and checksums without resetting the source stack.
-- Transfer that private bundle to this VM, then validate and restore it locally before deleting either source or archive.
-- Keep an eye on root-disk growth because Podman stores images under the non-Projects home filesystem; relocate its graph root only through a deliberate migration if more images are needed.
-- After a reboot, start the user Podman socket and local Supabase again, then launch the site from `../code/site`; the current services remain running for this VM session.
-- Do not alter the seven preserved dirty repositories unless explicitly assigned.
+- On the new machine, first verify `~/scratch/os.sql` is owner-only, exactly `1,539,676` bytes, and matches the recorded SHA-256; do not expose its contents.
+- Confirm the destination is strictly local and create a pre-import backup of its current seeded database.
+- Review a restore sequence for the full schema-and-data SQL before applying it; do not import blindly over populated seed tables and never use linked, staging, or production endpoints.
+- After restore, compare the four source counts and verify the owner-selected account and expected data through the local browser workflow.
+- Keep the source dump until owner acceptance, and handle physical Storage bytes separately only if the owner requires them.
+- Use `koder/issues/001_restore_original_local_supabase/INDEX.md` as the authoritative restore handoff.
