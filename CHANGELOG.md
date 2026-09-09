@@ -4,6 +4,12 @@ This is a concise, newest-first record of meaningful project changes. Keep
 umbrella milestones rather than mirroring every commit. Current readiness belongs
 in `koder/STATE.md`, live Git state, and current validation.
 
+## 2026-09-09 — Source database export handoff
+
+- Exported the source `../code/site` local PostgreSQL database as a complete owner-only plain SQL file and recorded its size, checksum, structural validation, and comparison counts in root Issue `001`.
+- The owner will privately place the file at `~/scratch/os.sql` on the new machine; transfer verification and the guarded local-only restore remain pending.
+- Kept physical Supabase Storage bytes explicitly outside this database-only handoff so metadata recovery is not mistaken for complete object recovery.
+
 ## 2026-09-09 — VM workspace restoration
 
 - Restored all 27 sibling repositories, secured the private transfer payload, installed the site dependencies, and validated the ARM64 application build and local runtime.

@@ -1,139 +1,79 @@
 ---
-status: blocked
+status: in_progress
 priority: P1
 created: 2026-09-09
 updated: 2026-09-09
 tags: supabase, migration, data-recovery
 type: bug
 issue_kind: slice
-context: The VM received repository files and seed SQL, but not the old machine's local Supabase database or Storage volume.
+context: The source local PostgreSQL dump now exists; private transfer and destination restore remain.
 ---
 
-# Issue 001: Restore the original local Supabase data
+# Issue 001: Restore the original local Supabase database
 
-## Problem
+## Owner direction
 
-The VM database is not a 1:1 copy of the old machine. `os.zip` intentionally excluded Docker data, and no PostgreSQL dump or Storage backup exists in the transfer archive or `~/scrap/`. The VM was initialized with `supabase db reset --local`, so its data comes from repository migrations and six seed files.
+The owner narrowed this handoff to one database dump from `../code/site`. Do not block the database restore on the earlier multi-artifact export plan.
 
-Observed VM baseline on 2026-09-09:
+This is a database-only transfer. Supabase Storage metadata is in PostgreSQL, but the physical Storage object bytes are not in the SQL file and remain a separate concern if the owner needs them.
+
+## Source export completed
+
+On 2026-09-09, the running local `os-specs` PostgreSQL database was exported from `supabase_db_os-specs`:
+
+```bash
+docker exec supabase_db_os-specs \
+  pg_dump -U postgres -d postgres --format=plain --no-owner --no-acl \
+  > ~/Desktop/os.sql
+```
+
+Validated source artifact:
+
+- path on source machine: `~/Desktop/os.sql`;
+- format: complete plain PostgreSQL SQL with schema and data;
+- size: `1,539,676` bytes;
+- mode: `0600`;
+- SHA-256: `daed4bb4b36f50289353ef9a0b12552e57ae4d491a6e06a6f96f7881f44c0cbb`;
+- structural check: PostgreSQL completion marker, 95 `CREATE TABLE` statements, and 95 data `COPY` blocks.
+
+Source comparison counts at export time:
 
 - 99 migration records;
-- 25 local auth users;
-- 60 organizations;
-- the reported founder account and its content are seed-generated;
-- 12 local Supabase containers are healthy, but they contain only the rebuilt seed state.
+- 25 auth users;
+- 69 organizations;
+- 21 Storage metadata objects.
 
-The old machine's preserved Supabase volume is therefore the required source. Do not delete, reset, prune, or recreate that stack.
-
-## Source-machine export handoff
-
-Run from the old OneSource workspace with the app stopped so no writes occur during export. Starting the existing local Supabase stack is acceptable; **never run `supabase db reset` on the source**.
-
-1. Open the harness from `root/`, read the root and `code/site` handoffs, and verify the old local stack and volume still exist.
-2. Confirm every database endpoint is local (`127.0.0.1`/`localhost`), not linked staging or production.
-3. Create a private export directory outside Git:
-
-   ```bash
-   export EXPORT_DIR="$HOME/scrap/onesource-supabase-export-$(date +%Y%m%dT%H%M%S)"
-   mkdir -m 700 -p "$EXPORT_DIR"
-   cd ../code/site
-   ```
-
-4. Produce the portable Supabase SQL set using the CLI version available on the old machine:
-
-   ```bash
-   supabase db dump --local --role-only --file "$EXPORT_DIR/roles.sql"
-   supabase db dump --local --file "$EXPORT_DIR/schema.sql"
-   supabase db dump --local --data-only --use-copy --file "$EXPORT_DIR/data.sql"
-   ```
-
-5. Also retain a full custom-format PostgreSQL fallback. Discover the existing database container rather than assuming its name:
-
-   ```bash
-   DB_CONTAINER=$(docker ps --format '{{.Names}}' | awk '/^supabase_db_/ {print; exit}')
-   test -n "$DB_CONTAINER"
-   docker exec "$DB_CONTAINER" \
-     pg_dump -U postgres -d postgres -Fc --no-owner --no-acl \
-     > "$EXPORT_DIR/postgres-full.dump"
-   ```
-
-6. Export local Storage object bytes as well as database metadata:
-
-   ```bash
-   STORAGE_CONTAINER=$(docker ps --format '{{.Names}}' | awk '/^supabase_storage_/ {print; exit}')
-   test -n "$STORAGE_CONTAINER"
-   mkdir -m 700 "$EXPORT_DIR/storage"
-   docker cp "$STORAGE_CONTAINER:/mnt/." "$EXPORT_DIR/storage/"
-   tar -C "$EXPORT_DIR" -czf "$EXPORT_DIR/storage.tar.gz" storage
-   rm -rf "$EXPORT_DIR/storage"
-   ```
-
-7. Record non-secret compatibility and comparison evidence:
-
-   ```bash
-   {
-     date --iso-8601=seconds
-     uname -m
-     docker --version
-     supabase --version
-     docker exec "$DB_CONTAINER" postgres --version
-   } > "$EXPORT_DIR/versions.txt"
-
-   docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -At \
-     -v ON_ERROR_STOP=1 > "$EXPORT_DIR/counts.txt" <<'SQL'
-   select 'migrations=' || count(*) from supabase_migrations.schema_migrations;
-   select 'users=' || count(*) from auth.users;
-   select 'organizations=' || count(*) from public.organizations;
-   select 'storage_objects=' || count(*) from storage.objects;
-   SQL
-   ```
-
-8. Verify outputs are non-empty, make the bundle owner-only, archive it, and write a checksum:
-
-   ```bash
-   test -s "$EXPORT_DIR/schema.sql"
-   test -s "$EXPORT_DIR/data.sql"
-   test -s "$EXPORT_DIR/postgres-full.dump"
-   chmod -R go-rwx "$EXPORT_DIR"
-   EXPORT_PARENT=$(dirname "$EXPORT_DIR")
-   EXPORT_NAME=$(basename "$EXPORT_DIR")
-   tar -C "$EXPORT_PARENT" -czf "$EXPORT_DIR.tar.gz" "$EXPORT_NAME"
-   chmod 600 "$EXPORT_DIR.tar.gz"
-   (
-     cd "$EXPORT_PARENT"
-     sha256sum "$EXPORT_NAME.tar.gz" > "$EXPORT_NAME.tar.gz.sha256"
-   )
-   chmod 600 "$EXPORT_DIR.tar.gz.sha256"
-   ```
-
-9. Transfer the `.tar.gz` and `.sha256` files privately to the new VM's `~/scrap/`. Do not commit the bundle, dump, counts, credentials, or private payload to any repository.
+The owner will transfer the file privately and expects it at `~/scratch/os.sql` on the new machine before the next session. That destination file has not yet been observed or verified by this session.
 
 ## Destination restore boundary
 
-Do not import automatically when the bundle arrives. First verify its checksum, inspect source/target PostgreSQL and Supabase versions, and back up the VM's current seeded fallback. Then choose the least-destructive restore sequence for the supplied dump set, restore Storage bytes, and compare source/target counts before accepting the migration.
+On the new machine:
 
-The restore must remain strictly local. Do not use `--linked`, hosted database URLs, staging credentials, or production credentials.
+1. Verify that `~/scratch/os.sql` exists, is owner-only, is `1,539,676` bytes, and matches the recorded SHA-256. Do not print or copy its contents into logs or Git.
+2. Confirm all database endpoints are local. Never use `--linked`, hosted URLs, staging credentials, or production credentials.
+3. Back up the destination VM's current seeded local database before import.
+4. Stop the app and other local writers. Treat `os.sql` as a full schema-and-data dump; do not apply it blindly over populated seed tables.
+5. Restore only into the local Supabase PostgreSQL instance using a reviewed sequence appropriate for the destination PostgreSQL/Supabase versions.
+6. Compare the four source counts above and verify the owner-selected account through the local browser workflow before accepting the restore.
 
-## Acceptance Criteria
+The dump contains private application and authentication data. Never commit it, upload it to an unapproved service, or expose it in terminal/chat output.
 
-- [ ] The old source stack is preserved and no reset/prune command ran there.
-- [ ] `roles.sql`, `schema.sql`, `data.sql`, `postgres-full.dump`, `storage.tar.gz`, `versions.txt`, and `counts.txt` are present in an owner-only bundle.
-- [ ] The transfer archive checksum verifies on the new VM.
-- [ ] A pre-import backup of the VM's seeded fallback exists.
-- [ ] Database and Storage restore complete without touching a hosted project.
-- [ ] Source and destination key-table counts match, including `auth.users`, `public.organizations`, and `storage.objects`.
-- [ ] The owner-selected founder account's expected data and authenticated browser workflow are verified on the VM.
-- [ ] The original machine and export bundle remain available until owner acceptance.
+## Acceptance criteria
 
-## Non-Goals
+- [x] A complete owner-only source database dump exists.
+- [ ] `~/scratch/os.sql` is present and checksum-verified on the new machine.
+- [ ] A pre-import backup of the destination seeded database exists.
+- [ ] The database restore completes without touching a hosted project.
+- [ ] Destination migration, user, organization, and Storage metadata counts match the source.
+- [ ] The owner-selected account and expected data are verified through the local app.
+- [ ] The source dump remains available until owner acceptance.
 
-- Copying production or staging data.
-- Reusing the x86 Docker volume directly on ARM64.
-- Committing dumps, Storage objects, credentials, or row-level private data.
+## Separate concern
+
+`os.sql` contains the 21 `storage.objects` metadata rows but not their underlying object bytes. Recover the source Storage volume separately only if those files are required; do not represent metadata-only recovery as a complete Storage restore.
 
 ## Links
 
 - `koder/docs/MIGRATION.md`
 - `koder/STATE.md`
 - `../code/site/supabase/config.toml`
-- `../code/site/supabase/seed.sql`
